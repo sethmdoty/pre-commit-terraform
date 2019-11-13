@@ -42,7 +42,7 @@ Step into the repository you want to have the pre-commit hooks installed and run
 git init
 cat <<EOF > .pre-commit-config.yaml
 - repo: git://github.com/sethmdoty/pre-commit-terraform
-  rev: v1.19.0
+  rev: v1.21.0
   hooks:
     - id: terraform_fmt
     - id: terraform_docs
