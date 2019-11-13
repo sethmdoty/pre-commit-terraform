@@ -1,3 +1,7 @@
+# Collection of git hooks for Terraform to be used with [pre-commit framework](http://pre-commit.com/)
+
+[![Github tag](https://img.shields.io/github/tag/antonbabenko/pre-commit-terraform.svg)](https://github.com/antonbabenko/pre-commit-terraform/releases) ![](https://img.shields.io/maintenance/yes/2019.svg) [![Help Contribute to Open Source](https://www.codetriage.com/antonbabenko/pre-commit-terraform/badges/users.svg)](https://www.codetriage.com/antonbabenko/pre-commit-terraform)
+
 ## WHY FORK
 
 This is an exact clone of https://github.com/antonbabenko/pre-commit-terraform.  I just made some changes to the tflint config.  Specifically I want: 
@@ -5,9 +9,6 @@ This is an exact clone of https://github.com/antonbabenko/pre-commit-terraform. 
 
 not 
 `tflint --deep`
-# Collection of git hooks for Terraform to be used with [pre-commit framework](http://pre-commit.com/)
-
-[![Github tag](https://img.shields.io/github/tag/antonbabenko/pre-commit-terraform.svg)](https://github.com/antonbabenko/pre-commit-terraform/releases) ![](https://img.shields.io/maintenance/yes/2019.svg) [![Help Contribute to Open Source](https://www.codetriage.com/antonbabenko/pre-commit-terraform/badges/users.svg)](https://www.codetriage.com/antonbabenko/pre-commit-terraform)
 
 ## How to install
 
