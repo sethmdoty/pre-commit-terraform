@@ -1,4 +1,5 @@
-#WHY FORK
+## WHY FORK
+
 This is an exact clone of https://github.com/antonbabenko/pre-commit-terraform.  I just made some changes to the tflint config.  Specifically I want: 
 `tflint --enable-rule=terraform_documented_variables --enable-rule=terraform_documented_outputs --disable-rule=terraform_module_pinned_source --deep`
 
