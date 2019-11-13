@@ -18,6 +18,6 @@ for path_uniq in $(echo "${paths[*]}" | tr ' ' '\n' | sort -u); do
   path_uniq="${path_uniq//__REPLACED__SPACE__/ }"
 
   pushd "$path_uniq" > /dev/null
-  tflint --deep
+  tflint --enable-rule=terraform_documented_variables --enable-rule=terraform_documented_outputs --disable-rule=terraform_module_pinned_source --deep
   popd > /dev/null
 done
