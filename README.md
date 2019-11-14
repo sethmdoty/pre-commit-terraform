@@ -55,6 +55,7 @@ cat <<EOF > .pre-commit-config.yaml
     - id: terraform_fmt
     - id: terraform_docs
     - id: terraform_tflint
+    - id: terragrunt_fmt
 EOF
 ```
 
