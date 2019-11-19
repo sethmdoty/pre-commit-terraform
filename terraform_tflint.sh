@@ -40,7 +40,7 @@ tflint_() {
     path_uniq="${path_uniq//__REPLACED__SPACE__/ }"
 
     pushd "$path_uniq" > /dev/null
-    tflint $args
+    tflint $args --enable-rule=terraform_documented_outputs --disable-rule=terraform_module_pinned_source --enable-rule=terraform_documented_variables
     popd > /dev/null
   done
 }
