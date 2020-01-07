@@ -18,7 +18,7 @@ main() {
         ;;
       (--)
         shift
-        files="$@"
+        files="$*"
         break
         ;;
     esac
@@ -33,14 +33,14 @@ tflint_() {
 
     paths[index]=$(dirname "$file_with_path")
 
-    let "index+=1"
+    ((index+=1))
   done
 
   for path_uniq in $(echo "${paths[*]}" | tr ' ' '\n' | sort -u); do
     path_uniq="${path_uniq//__REPLACED__SPACE__/ }"
 
     pushd "$path_uniq" > /dev/null
-    tflint $args --enable-rule=terraform_documented_outputs --disable-rule=terraform_module_pinned_source --enable-rule=terraform_documented_variables
+    tflint "$args" --enable-rule=terraform_documented_outputs --disable-rule=terraform_module_pinned_source --enable-rule=terraform_documented_variables
     popd > /dev/null
   done
 }
