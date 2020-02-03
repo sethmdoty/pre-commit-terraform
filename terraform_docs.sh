@@ -12,12 +12,12 @@ main() {
 
   for argv; do
     case $argv in
-      (-a|--args)
+      -a | --args)
         shift
         args="$1"
         shift
         ;;
-      (--)
+      --)
         shift
         files="$@"
         break
@@ -25,19 +25,38 @@ main() {
     esac
   done
 
-  local hack_terraform_docs=$(terraform version | head -1 | grep -c 0.12)
+  local hack_terraform_docs
+  hack_terraform_docs=$(terraform version | head -1 | grep -c 0.12)
 
-  if [[ "$hack_terraform_docs" == "1" ]]; then
-    which awk 2>&1 >/dev/null || ( echo "awk is required for terraform-docs hack to work with Terraform 0.12"; exit 1)
+  if [[ ! $(command -v terraform-docs) ]]; then
+    echo "ERROR: terraform-docs is required by terraform_docs pre-commit hook but is not installed or in the system's PATH."
+    exit 1
+  fi
+
+  local is_old_terraform_docs
+  is_old_terraform_docs=$(terraform-docs version | grep -o "v0.[1-7]" | tail -1)
+
+  if [[ -z "$is_old_terraform_docs" ]]; then # Using terraform-docs 0.8+ (preferred)
+
+    terraform_docs "0" "$args" "$files"
+
+  elif [[ "$hack_terraform_docs" == "1" ]]; then # Using awk script because terraform-docs is older than 0.8 and terraform 0.12 is used
+
+    if [[ ! $(command -v awk) ]]; then
+      echo "ERROR: awk is required for terraform-docs hack to work with Terraform 0.12."
+      exit 1
+    fi
 
     tmp_file_awk=$(mktemp "${TMPDIR:-/tmp}/terraform-docs-XXXXXXXXXX")
     terraform_docs_awk "$tmp_file_awk"
     terraform_docs "$tmp_file_awk" "$args" "$files"
     rm -f "$tmp_file_awk"
-  else
-    terraform_docs "0" "$args" "$files"
-  fi
 
+  else # Using terraform 0.11 and no awk script is needed for that
+
+    terraform_docs "0" "$args" "$files"
+
+  fi
 }
 
 terraform_docs() {
@@ -59,7 +78,7 @@ terraform_docs() {
       tfvars_files+=("$file_with_path")
     fi
 
-    ((index+=1))
+    ((index += 1))
   done
 
   readonly tmp_file=$(mktemp)
@@ -75,18 +94,18 @@ terraform_docs() {
       continue
     fi
 
-  if [[ "$terraform_docs_awk_file" == "0" ]]; then
-    terraform-docs $args md ./ > "$tmp_file"
-  else
-    # Can't append extension for mktemp, so renaming instead
-    tmp_file_docs=$(mktemp "${TMPDIR:-/tmp}/terraform-docs-XXXXXXXXXX")
-    mv "$tmp_file_docs" "$tmp_file_docs.tf"
-    tmp_file_docs_tf="$tmp_file_docs.tf"
+    if [[ "$terraform_docs_awk_file" == "0" ]]; then
+      terraform-docs md "$args" ./ > "$tmp_file"
+    else
+      # Can't append extension for mktemp, so renaming instead
+      tmp_file_docs=$(mktemp "${TMPDIR:-/tmp}/terraform-docs-XXXXXXXXXX")
+      mv "$tmp_file_docs" "$tmp_file_docs.tf"
+      tmp_file_docs_tf="$tmp_file_docs.tf"
 
-    awk -f "$terraform_docs_awk_file" ./*.tf > "$tmp_file_docs_tf"
-    terraform-docs $args md "$tmp_file_docs_tf" > "$tmp_file"
-    rm -f "$tmp_file_docs_tf"
-  fi
+      awk -f "$terraform_docs_awk_file" ./*.tf > "$tmp_file_docs_tf"
+      terraform-docs md "$args" "$tmp_file_docs_tf" > "$tmp_file"
+      rm -f "$tmp_file_docs_tf"
+    fi
 
     # Replace content between markers with the placeholder - https://stackoverflow.com/questions/1212799/how-do-i-extract-lines-between-two-line-delimiters-in-perl#1212834
     perl -i -ne 'if (/BEGINNING OF PRE-COMMIT-TERRAFORM DOCS HOOK/../END OF PRE-COMMIT-TERRAFORM DOCS HOOK/) { print $_ if /BEGINNING OF PRE-COMMIT-TERRAFORM DOCS HOOK/; print "I_WANT_TO_BE_REPLACED\n$_" if /END OF PRE-COMMIT-TERRAFORM DOCS HOOK/;} else { print $_ }' "$text_file"
@@ -103,24 +122,19 @@ terraform_docs() {
 terraform_docs_awk() {
   readonly output_file=$1
 
-  cat <<"EOF" > $output_file
+  cat << "EOF" > "$output_file"
 # This script converts Terraform 0.12 variables/outputs to something suitable for `terraform-docs`
 # As of terraform-docs v0.6.0, HCL2 is not supported. This script is a *dirty hack* to get around it.
 # https://github.com/segmentio/terraform-docs/
 # https://github.com/segmentio/terraform-docs/issues/62
-
 # Script was originally found here: https://github.com/cloudposse/build-harness/blob/master/bin/terraform-docs.awk
-
 {
   if ( $0 ~ /\{/ ) {
     braceCnt++
   }
-
   if ( $0 ~ /\}/ ) {
     braceCnt--
   }
-
-
   # ----------------------------------------------------------------------------------------------
   # variable|output "..." {
   # ----------------------------------------------------------------------------------------------
@@ -142,8 +156,6 @@ terraform_docs_awk() {
     # Print variable|output line
     print $0
   }
-
-
   # ----------------------------------------------------------------------------------------------
   # default = ...
   # ----------------------------------------------------------------------------------------------
@@ -177,8 +189,6 @@ terraform_docs_awk() {
       }
     }
   }
-
-
   # ----------------------------------------------------------------------------------------------
   # type  = ...
   # ----------------------------------------------------------------------------------------------
@@ -211,7 +221,6 @@ terraform_docs_awk() {
         } else {
           type = $3
         }
-
         # legacy quoted types: "string", "list", and "map"
         if (type ~ /^[[:space:]]*"(.*?)"[[:space:]]*$/) {
           print "  type = " type
@@ -229,8 +238,6 @@ terraform_docs_awk() {
       blockTypeCnt -= gsub(/\}/, "")
     }
   }
-
-
   # ----------------------------------------------------------------------------------------------
   # description = ...
   # ----------------------------------------------------------------------------------------------
@@ -240,8 +247,6 @@ terraform_docs_awk() {
       print $0
     }
   }
-
-
   # ----------------------------------------------------------------------------------------------
   # value = ...
   # ----------------------------------------------------------------------------------------------
@@ -251,8 +256,6 @@ terraform_docs_awk() {
   #    print $0
   #  }
   #}
-
-
   # ----------------------------------------------------------------------------------------------
   # Newlines, comments, everything else
   # ----------------------------------------------------------------------------------------------
@@ -350,59 +353,73 @@ getopt() {
 
     while [[ $# -gt 0 ]]; do
       case $1 in
-        (-a|--alternative)
-          flags=a$flags ;;
-
-        (-h|--help)
-          _getopt_help
-          return 2  # as does GNU getopt
+        -a | --alternative)
+          flags=a$flags
           ;;
 
-        (-l|--longoptions)
+        -h | --help)
+          _getopt_help
+          return 2 # as does GNU getopt
+          ;;
+
+        -l | --longoptions)
           long="$long${long:+,}$2"
-          shift ;;
+          shift
+          ;;
 
-        (-n|--name)
+        -n | --name)
           name=$2
-          shift ;;
+          shift
+          ;;
 
-        (-o|--options)
+        -o | --options)
           short=$2
           have_short=true
-          shift ;;
+          shift
+          ;;
 
-        (-q|--quiet)
-          flags=q$flags ;;
+        -q | --quiet)
+          flags=q$flags
+          ;;
 
-        (-Q|--quiet-output)
-          flags=Q$flags ;;
+        -Q | --quiet-output)
+          flags=Q$flags
+          ;;
 
-        (-s|--shell)
+        -s | --shell)
           case $2 in
-            (sh|bash)
-              flags=${flags//t/} ;;
-            (csh|tcsh)
-              flags=t$flags ;;
-            (*)
+            sh | bash)
+              flags=${flags//t/}
+              ;;
+            csh | tcsh)
+              flags=t$flags
+              ;;
+            *)
               echo 'getopt: unknown shell after -s or --shell argument' >&2
               echo "Try \`getopt --help' for more information." >&2
-              return 2 ;;
+              return 2
+              ;;
           esac
-          shift ;;
-
-        (-u|--unquoted)
-          flags=u$flags ;;
-
-        (-T|--test)
-          return 4 ;;
-
-        (-V|--version)
-          echo "pure-getopt 1.4.3"
-          return 0 ;;
-
-        (--)
           shift
-          break ;;
+          ;;
+
+        -u | --unquoted)
+          flags=u$flags
+          ;;
+
+        -T | --test)
+          return 4
+          ;;
+
+        -V | --version)
+          echo "pure-getopt 1.4.3"
+          return 0
+          ;;
+
+        --)
+          shift
+          break
+          ;;
       esac
 
       shift
@@ -463,9 +480,9 @@ getopt() {
     # for use with _getopt_resolve_abbrev
     declare -a longarr
     _getopt_split longarr "$long"
-    longarr=( "${longarr[@]/#/--}" )
-    longarr=( "${longarr[@]%:}" )
-    longarr=( "${longarr[@]%:}" )
+    longarr=("${longarr[@]/#/--}")
+    longarr=("${longarr[@]%:}")
+    longarr=("${longarr[@]%:}")
 
     # Parse and collect options and parameters
     declare -a opts params
@@ -473,18 +490,19 @@ getopt() {
 
     while [[ $# -gt 0 ]]; do
       case $1 in
-        (--)
-          params=( "${params[@]}" "${@:2}" )
-          break ;;
+        --)
+          params=("${params[@]}" "${@:2}")
+          break
+          ;;
 
-        (--*=*)
+        --*=*)
           o=${1%%=*}
           if ! o=$(_getopt_resolve_abbrev "$o" "${longarr[@]}"); then
             error=1
           elif [[ ,"$long", == *,"${o#--}"::,* ]]; then
-            opts=( "${opts[@]}" "$o" "${1#*=}" )
+            opts=("${opts[@]}" "$o" "${1#*=}")
           elif [[ ,"$long", == *,"${o#--}":,* ]]; then
-            opts=( "${opts[@]}" "$o" "${1#*=}" )
+            opts=("${opts[@]}" "$o" "${1#*=}")
           elif [[ ,"$long", == *,"${o#--}",* ]]; then
             if $alt_recycled; then o=${o#-}; fi
             _getopt_err "$name: option '$o' doesn't allow an argument"
@@ -496,18 +514,18 @@ getopt() {
           alt_recycled=false
           ;;
 
-        (--?*)
+        --?*)
           o=$1
           if ! o=$(_getopt_resolve_abbrev "$o" "${longarr[@]}"); then
             error=1
           elif [[ ,"$long", == *,"${o#--}",* ]]; then
-            opts=( "${opts[@]}" "$o" )
+            opts=("${opts[@]}" "$o")
           elif [[ ,"$long", == *,"${o#--}::",* ]]; then
-            opts=( "${opts[@]}" "$o" '' )
+            opts=("${opts[@]}" "$o" '')
           elif [[ ,"$long", == *,"${o#--}:",* ]]; then
             if [[ $# -ge 2 ]]; then
               shift
-              opts=( "${opts[@]}" "$o" "$1" )
+              opts=("${opts[@]}" "$o" "$1")
             else
               if $alt_recycled; then o=${o#-}; fi
               _getopt_err "$name: option '$o' requires an argument"
@@ -520,7 +538,7 @@ getopt() {
           alt_recycled=false
           ;;
 
-        (-*)
+        -*)
           if [[ $flags == *a* ]]; then
             # Alternative parsing mode!
             # Try to handle as a long option if any of the following apply:
@@ -530,28 +548,32 @@ getopt() {
             #  4. There's a single letter and no short match
             o=${1::2} # temp for testing #4
             if [[ $1 == *=* || $1 == -?? || \
-                  ,$long, == *,"${1#-}"[:,]* || \
-                  ,$short, != *,"${o#-}"[:,]* ]]; then
-              o=$(_getopt_resolve_abbrev "${1%%=*}" "${longarr[@]}" 2>/dev/null)
+              ,$long, == *,"${1#-}"[:,]* || \
+              ,$short, != *,"${o#-}"[:,]* ]]; then
+              o=$(_getopt_resolve_abbrev "${1%%=*}" "${longarr[@]}" 2> /dev/null)
               case $? in
-                (0)
+                0)
                   # Unambiguous match. Let the long options parser handle
                   # it, with a flag to get the right error message.
                   set -- "-$1" "${@:2}"
                   alt_recycled=true
-                  continue ;;
-                (1)
+                  continue
+                  ;;
+                1)
                   # Ambiguous match, generate error and continue.
-                  _getopt_resolve_abbrev "${1%%=*}" "${longarr[@]}" >/dev/null
+                  _getopt_resolve_abbrev "${1%%=*}" "${longarr[@]}" > /dev/null
                   error=1
                   shift
-                  continue ;;
-                (2)
+                  continue
+                  ;;
+                2)
                   # No match, fall through to single-character check.
-                  true ;;
-                (*)
+                  true
+                  ;;
+                *)
                   echo "getopt: assertion failed (3)" >&2
-                  return 3 ;;
+                  return 3
+                  ;;
               esac
             fi
           fi
@@ -559,22 +581,22 @@ getopt() {
           o=${1::2}
           if [[ "$short" == *"${o#-}"::* ]]; then
             if [[ ${#1} -gt 2 ]]; then
-              opts=( "${opts[@]}" "$o" "${1:2}" )
+              opts=("${opts[@]}" "$o" "${1:2}")
             else
-              opts=( "${opts[@]}" "$o" '' )
+              opts=("${opts[@]}" "$o" '')
             fi
           elif [[ "$short" == *"${o#-}":* ]]; then
             if [[ ${#1} -gt 2 ]]; then
-              opts=( "${opts[@]}" "$o" "${1:2}" )
+              opts=("${opts[@]}" "$o" "${1:2}")
             elif [[ $# -ge 2 ]]; then
               shift
-              opts=( "${opts[@]}" "$o" "$1" )
+              opts=("${opts[@]}" "$o" "$1")
             else
               _getopt_err "$name: option requires an argument -- '${o#-}'"
               error=1
             fi
           elif [[ "$short" == *"${o#-}"* ]]; then
-            opts=( "${opts[@]}" "$o" )
+            opts=("${opts[@]}" "$o")
             if [[ ${#1} -gt 2 ]]; then
               set -- "$o" "-${1:2}" "${@:2}"
             fi
@@ -591,26 +613,28 @@ getopt() {
               fi
             fi
             error=1
-          fi ;;
+          fi
+          ;;
 
-        (*)
+        *)
           # GNU getopt in-place mode (leading dash on short options)
           # overrides POSIXLY_CORRECT
           if [[ $flags == *i* ]]; then
-            opts=( "${opts[@]}" "$1" )
+            opts=("${opts[@]}" "$1")
           elif [[ $flags == *p* ]]; then
-            params=( "${params[@]}" "$@" )
+            params=("${params[@]}" "$@")
             break
           else
-            params=( "${params[@]}" "$1" )
+            params=("${params[@]}" "$1")
           fi
+          ;;
       esac
 
       shift
     done
 
     if [[ $flags == *Q* ]]; then
-      true  # generate no output
+      true # generate no output
     else
       echo -n ' '
       if [[ $flags == *[cu]* ]]; then
@@ -647,33 +671,39 @@ getopt() {
     for a; do
       if [[ $q == "$a" ]]; then
         # Exact match. Squash any other partial matches.
-        matches=( "$a" )
+        matches=("$a")
         break
       elif [[ $flags == *a* && $q == -[^-]* && $a == -"$q" ]]; then
         # Exact alternative match. Squash any other partial matches.
-        matches=( "$a" )
+        matches=("$a")
         break
       elif [[ $a == "$q"* ]]; then
         # Abbreviated match.
-        matches=( "${matches[@]}" "$a" )
+        matches=("${matches[@]}" "$a")
       elif [[ $flags == *a* && $q == -[^-]* && $a == -"$q"* ]]; then
         # Abbreviated alternative match.
-        matches=( "${matches[@]}" "${a#-}" )
+        matches=("${matches[@]}" "${a#-}")
       fi
     done
     case ${#matches[@]} in
-      (0)
-        [[ $flags == *q* ]] || \
-        printf "$name: unrecognized option %s\\n" >&2 \
-          "$(_getopt_quote "$q")"
-        return 2 ;;
-      (1)
-        printf '%s' "${matches[0]}"; return 0 ;;
-      (*)
-        [[ $flags == *q* ]] || \
-        printf "$name: option %s is ambiguous; possibilities: %s\\n" >&2 \
-          "$(_getopt_quote "$q")" "$(_getopt_quote "${matches[@]}")"
-        return 1 ;;
+      0)
+        [[ $flags == *q* ]] ||
+          printf "$name: unrecognized option %s\\n" \
+            "$(_getopt_quote "$q")" >&2
+
+        return 2
+        ;;
+      1)
+        printf '%s' "${matches[0]}"
+        return 0
+        ;;
+      *)
+        [[ $flags == *q* ]] ||
+          printf "$name: option %s is ambiguous; possibilities: %s\\n" \
+            "$(_getopt_quote "$q")" "$(_getopt_quote "${matches[@]}")" >&2
+
+        return 1
+        ;;
     esac
   }
 
@@ -698,15 +728,18 @@ getopt() {
     declare s i c space
     for s; do
       echo -n "$space'"
-      for ((i=0; i<${#s}; i++)); do
+      for ((i = 0; i < ${#s}; i++)); do
         c=${s:i:1}
         case $c in
-          (\\|\'|!)
-            echo -n "'\\$c'" ;;
-          ($'\n')
-            echo -n "\\$c" ;;
-          (*)
-            echo -n "$c" ;;
+          \\ | \' | !)
+            echo -n "'\\$c'"
+            ;;
+          $'\n')
+            echo -n "\\$c"
+            ;;
+          *)
+            echo -n "$c"
+            ;;
         esac
       done
       echo -n \'
@@ -715,7 +748,7 @@ getopt() {
   }
 
   _getopt_help() {
-    cat <<-EOT >&2
+    cat <<- EOT >&2
 
 	Usage:
 	 getopt <optstring> <parameters>
